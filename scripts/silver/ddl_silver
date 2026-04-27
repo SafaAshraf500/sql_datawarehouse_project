@@ -1,0 +1,280 @@
+-- ============================================================
+-- SILVER LAYER  –  Retail Data Warehouse (12 Tables)
+-- Silver = clean copy of bronze + dwh_create_date
+-- NO merging here  →  merging happens in GOLD layer
+-- ============================================================
+
+-- ─────────────────────────────────────────
+-- 1. customers
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.customers', 'U') IS NOT NULL
+    DROP TABLE silver.customers;
+
+CREATE TABLE silver.customers (
+    customer_id        INT,
+    customer_city      NVARCHAR(50),
+    signup_date        DATE,
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.customers (customer_id, customer_city, signup_date)
+SELECT
+    customer_id,
+    TRIM(city),
+    signup_date
+FROM bronze.customers
+WHERE customer_id IS NOT NULL;
+
+-- ─────────────────────────────────────────
+-- 2. orders
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.orders', 'U') IS NOT NULL
+    DROP TABLE silver.orders;
+
+CREATE TABLE silver.orders (
+    order_id           INT,
+    customer_id        INT,
+    store_id           INT,
+    promotion_id       INT,
+    order_date         DATE,
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.orders (order_id, customer_id, store_id, promotion_id, order_date)
+SELECT
+    order_id,
+    customer_id,
+    store_id,
+    promotion_id,
+    order_date
+FROM bronze.orders
+WHERE order_id IS NOT NULL;
+
+-- ─────────────────────────────────────────
+-- 3. order_items
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.order_items', 'U') IS NOT NULL
+    DROP TABLE silver.order_items;
+
+CREATE TABLE silver.order_items (
+    order_item_id      INT,
+    order_id           INT,
+    product_id         INT,
+    qty                INT,
+    item_price         DECIMAL(10, 2),
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.order_items (order_item_id, order_id, product_id, qty, item_price)
+SELECT
+    order_item_id,
+    order_id,
+    product_id,
+    qty,
+    price
+FROM bronze.order_items
+WHERE order_item_id IS NOT NULL;
+
+-- ─────────────────────────────────────────
+-- 4. products
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.products', 'U') IS NOT NULL
+    DROP TABLE silver.products;
+
+CREATE TABLE silver.products (
+    product_id         INT,
+    category_id        INT,
+    supplier_id        INT,
+    product_price      DECIMAL(10, 2),
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.products (product_id, category_id, supplier_id, product_price)
+SELECT
+    product_id,
+    category_id,
+    supplier_id,
+    price
+FROM bronze.products
+WHERE product_id IS NOT NULL;
+
+-- ─────────────────────────────────────────
+-- 5. categories
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.categories', 'U') IS NOT NULL
+    DROP TABLE silver.categories;
+
+CREATE TABLE silver.categories (
+    category_id        INT,
+    category_name      NVARCHAR(100),
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.categories (category_id, category_name)
+SELECT
+    category_id,
+    TRIM(category_name)
+FROM bronze.categories
+WHERE category_id IS NOT NULL;
+
+-- ─────────────────────────────────────────
+-- 6. employees
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.employees', 'U') IS NOT NULL
+    DROP TABLE silver.employees;
+
+CREATE TABLE silver.employees (
+    employee_id        INT,
+    store_id           INT,
+    employee_salary    DECIMAL(10, 2),
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.employees (employee_id, store_id, employee_salary)
+SELECT
+    employee_id,
+    store_id,
+    salary
+FROM bronze.employees
+WHERE employee_id IS NOT NULL;
+
+-- ─────────────────────────────────────────
+-- 7. stores
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.stores', 'U') IS NOT NULL
+    DROP TABLE silver.stores;
+
+CREATE TABLE silver.stores (
+    store_id           INT,
+    store_city         NVARCHAR(50),
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.stores (store_id, store_city)
+SELECT
+    store_id,
+    TRIM(city)
+FROM bronze.stores
+WHERE store_id IS NOT NULL;
+
+-- ─────────────────────────────────────────
+-- 8. suppliers
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.suppliers', 'U') IS NOT NULL
+    DROP TABLE silver.suppliers;
+
+CREATE TABLE silver.suppliers (
+    supplier_id        INT,
+    supplier_country   NVARCHAR(50),
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.suppliers (supplier_id, supplier_country)
+SELECT
+    supplier_id,
+    TRIM(country)
+FROM bronze.suppliers
+WHERE supplier_id IS NOT NULL;
+
+-- ─────────────────────────────────────────
+-- 9. promotions
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.promotions', 'U') IS NOT NULL
+    DROP TABLE silver.promotions;
+
+CREATE TABLE silver.promotions (
+    promotion_id       INT,
+    discount           INT,
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.promotions (promotion_id, discount)
+SELECT DISTINCT 
+    promotion_id,
+    discount
+FROM bronze.promotions
+WHERE promotion_id IS NOT NULL;
+
+SELECT promotion_id, COUNT(*)
+FROM bronze.promotions
+GROUP BY promotion_id
+HAVING COUNT(*) > 1;
+-- ─────────────────────────────────────────
+-- 10. payments
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.payments', 'U') IS NOT NULL
+    DROP TABLE silver.payments;
+
+CREATE TABLE silver.payments (
+    payment_id         INT,
+    order_id           INT,
+    payment_amount     DECIMAL(12, 2),
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.payments (payment_id, order_id, payment_amount)
+SELECT
+    payment_id,
+    order_id,
+    amount
+FROM bronze.payments
+WHERE payment_id IS NOT NULL;
+
+-- ─────────────────────────────────────────
+-- 11. shipments
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.shipments', 'U') IS NOT NULL
+    DROP TABLE silver.shipments;
+
+CREATE TABLE silver.shipments (
+    shipment_id        INT,
+    order_id           INT,
+    shipment_status    NVARCHAR(50),
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.shipments (shipment_id, order_id, shipment_status)
+SELECT
+    shipment_id,
+    order_id,
+    TRIM(status)
+FROM bronze.shipments
+WHERE shipment_id IS NOT NULL;
+
+-- ─────────────────────────────────────────
+-- 12. returns
+-- ─────────────────────────────────────────
+IF OBJECT_ID ('silver.returns', 'U') IS NOT NULL
+    DROP TABLE silver.returns;
+
+CREATE TABLE silver.returns (
+    return_id          INT,
+    order_item_id      INT,
+    refund             INT,
+    dwh_create_date    DATETIME2 DEFAULT GETDATE()
+);
+
+INSERT INTO silver.returns (return_id, order_item_id, refund)
+SELECT
+    return_id,
+    order_item_id,
+    refund
+FROM bronze.returns
+WHERE return_id IS NOT NULL;
+GO
+
+-- ─────────────────────────────────────────
+-- VERIFY: row counts match bronze exactly
+-- ─────────────────────────────────────────
+SELECT 'customers'   , COUNT(*) FROM silver.customers   UNION ALL
+SELECT 'orders'      , COUNT(*) FROM silver.orders      UNION ALL
+SELECT 'order_items' , COUNT(*) FROM silver.order_items UNION ALL
+SELECT 'products'    , COUNT(*) FROM silver.products    UNION ALL
+SELECT 'categories'  , COUNT(*) FROM silver.categories  UNION ALL
+SELECT 'employees'   , COUNT(*) FROM silver.employees   UNION ALL
+SELECT 'stores'      , COUNT(*) FROM silver.stores      UNION ALL
+SELECT 'suppliers'   , COUNT(*) FROM silver.suppliers   UNION ALL
+SELECT 'promotions'  , COUNT(*) FROM silver.promotions  UNION ALL
+SELECT 'payments'    , COUNT(*) FROM silver.payments    UNION ALL
+SELECT 'shipments'   , COUNT(*) FROM silver.shipments   UNION ALL
+SELECT 'returns'     , COUNT(*) FROM silver.returns;
