@@ -1,0 +1,318 @@
+-- ============================================================
+--  DATA QUALITY CHECK  –  bronze.customers
+-- ============================================================
+
+PRINT '========================================';
+PRINT 'START: bronze.customers quality check';
+PRINT '========================================';
+
+-- ─────────────────────────────────────────
+-- 1. ROW COUNT
+-- ─────────────────────────────────────────
+PRINT '>> 1. Row Count';
+SELECT COUNT(*) AS total_rows FROM bronze.customers;
+
+-- ─────────────────────────────────────────
+-- 2. SAMPLE DATA
+-- ─────────────────────────────────────────
+PRINT '>> 2. Sample Data (first 10 rows)';
+SELECT TOP 10 * FROM bronze.customers;
+
+-- ─────────────────────────────────────────
+-- 3. NULL CHECK  (key columns)
+-- ─────────────────────────────────────────
+PRINT '>> 3. NULL Check';
+SELECT
+    SUM(CASE WHEN customer_id   IS NULL THEN 1 ELSE 0 END) AS null_customer_id,
+    SUM(CASE WHEN city IS NULL THEN 1 ELSE 0 END) AS null_city,
+    SUM(CASE WHEN signup_date   IS NULL THEN 1 ELSE 0 END) AS null_signup_date
+FROM bronze.customers;
+-- EXPECT: all zeros ✅
+
+-- ─────────────────────────────────────────
+-- 4. DUPLICATE CHECK
+-- ─────────────────────────────────────────
+PRINT '>> 4. Duplicate IDs';
+SELECT customer_id, COUNT(*) AS cnt
+FROM bronze.customers
+GROUP BY customer_id
+HAVING COUNT(*) > 1
+ORDER BY cnt DESC;
+-- EXPECT: 0 rows returned ✅
+
+-- ─────────────────────────────────────────
+-- 5. EXTRA SPACES IN TEXT
+-- ─────────────────────────────────────────
+PRINT '>> 5. Extra Spaces';
+SELECT customer_id, city
+FROM bronze.customers
+WHERE city != TRIM(city);
+-- EXPECT: 0 rows returned ✅
+
+-- ─────────────────────────────────────────
+-- 6. DATE FORMAT CHECK
+-- ─────────────────────────────────────────
+PRINT '>> 6. Invalid Dates';
+SELECT customer_id, signup_date
+FROM bronze.customers
+WHERE ISDATE(CAST(signup_date AS NVARCHAR)) = 0
+   OR signup_date > GETDATE()        -- future dates make no sense
+   OR signup_date < '2000-01-01';    -- too old dates make no sense
+-- EXPECT: 0 rows returned ✅
+
+-- ─────────────────────────────────────────
+-- 7. DISTINCT VALUES  (check for garbage)
+-- ─────────────────────────────────────────
+PRINT '>> 7. Distinct Cities';
+SELECT DISTINCT city, COUNT(*) AS cnt
+FROM bronze.customers
+GROUP BY city
+ORDER BY cnt DESC;
+-- LOOK FOR: weird values, NULLs, typos like 'N/A', 'Unknown', '?'
+
+PRINT '>> 8. Summary';
+SELECT
+    COUNT(*)                                                    AS total_rows,
+    COUNT(DISTINCT customer_id)                                 AS unique_customers,
+    SUM(CASE WHEN customer_id   IS NULL THEN 1 ELSE 0 END)      AS null_ids,
+    SUM(CASE WHEN city IS NULL THEN 1 ELSE 0 END)      AS null_cities,
+    SUM(CASE WHEN city != TRIM(city) THEN 1 ELSE 0 END) AS has_spaces,
+    MIN(signup_date)                                            AS earliest_signup,
+    MAX(signup_date)                                            AS latest_signup
+FROM bronze.customers;
+
+PRINT '========================================';
+PRINT 'END: bronze.customers quality check';
+PRINT '========================================';
+
+-- ============================================================
+--  DATA QUALITY CHECK  –  bronze.categories
+-- ============================================================
+
+PRINT '>> bronze.categories ';
+SELECT
+    COUNT(*)                                                    AS total_rows,
+    COUNT(DISTINCT category_id)                                 AS unique_customers,
+    SUM(CASE WHEN category_id   IS NULL THEN 1 ELSE 0 END)      AS null_ids,
+    SUM(CASE WHEN category_name IS NULL THEN 1 ELSE 0 END)      AS null_cities,
+    SUM(CASE WHEN category_name != TRIM(category_name) THEN 1 ELSE 0 END) AS has_spaces
+
+FROM bronze.categories;
+
+PRINT '========================================';
+PRINT 'END: bronze.categories quality check';
+PRINT '========================================';
+
+PRINT '>> bronze.employees';
+SELECT
+    COUNT(*)                                                          AS total_rows,
+    COUNT(DISTINCT employee_id)                                       AS unique_employees,
+    COUNT(DISTINCT store_id)                                          AS unique_stores,
+    SUM(CASE WHEN employee_id      IS NULL THEN 1 ELSE 0 END)        AS null_ids,
+    SUM(CASE WHEN store_id         IS NULL THEN 1 ELSE 0 END)        AS null_store_id,
+    SUM(CASE WHEN salary  IS NULL THEN 1 ELSE 0 END)        AS null_salary,
+    SUM(CASE WHEN salary  < 0     THEN 1 ELSE 0 END)        AS negative_salary,
+    SUM(CASE WHEN salary  = 0     THEN 1 ELSE 0 END)        AS zero_salary,
+    MIN(salary)                                              AS min_salary,
+    MAX(salary)                                              AS max_salary,
+    AVG(salary)                                              AS avg_salary
+FROM bronze.employees;
+
+PRINT '>> bronze.order_items';
+SELECT
+    COUNT(*)                                                          AS total_rows,
+    COUNT(DISTINCT order_item_id)                                     AS unique_order_items,
+    COUNT(DISTINCT order_id)                                          AS unique_orders,
+    COUNT(DISTINCT product_id)                                        AS unique_products,
+    
+    -- Null Checks
+    SUM(CASE WHEN order_item_id IS NULL THEN 1 ELSE 0 END)           AS null_item_ids,
+    SUM(CASE WHEN order_id      IS NULL THEN 1 ELSE 0 END)           AS null_order_ids,
+    SUM(CASE WHEN qty           IS NULL THEN 1 ELSE 0 END)           AS null_qty,
+    SUM(CASE WHEN price         IS NULL THEN 1 ELSE 0 END)           AS null_price,
+    
+    -- Quantity & Price Validation
+    SUM(CASE WHEN qty   <= 0    THEN 1 ELSE 0 END)                   AS invalid_qty,
+    SUM(CASE WHEN price < 0     THEN 1 ELSE 0 END)                   AS negative_price,
+    SUM(CASE WHEN price = 0     THEN 1 ELSE 0 END)                   AS zero_price,
+    
+    -- Statistical Summary
+    MIN(price)                                                       AS min_price,
+    MAX(price)                                                       AS max_price,
+    AVG(price)                                                       AS avg_price,
+    SUM(qty)                                                         AS total_qty_ordered
+    
+FROM [Retail_DataWarehouse].[bronze].[order_items];
+
+PRINT '>> bronze.orders';
+SELECT
+    COUNT(*)                                                          AS total_rows,
+    COUNT(DISTINCT order_id)                                          AS unique_orders,
+    COUNT(DISTINCT customer_id)                                       AS unique_customers,
+    COUNT(DISTINCT store_id)                                          AS unique_stores,
+    
+    -- Null Checks
+    SUM(CASE WHEN order_id      IS NULL THEN 1 ELSE 0 END)           AS null_order_ids,
+    SUM(CASE WHEN customer_id   IS NULL THEN 1 ELSE 0 END)           AS null_customer_ids,
+    SUM(CASE WHEN order_date    IS NULL THEN 1 ELSE 0 END)           AS null_order_dates,
+    SUM(CASE WHEN promotion_id  IS NULL THEN 1 ELSE 0 END)           AS null_promotion_ids,
+    
+    -- Date Validation
+    MIN(order_date)                                                   AS earliest_order,
+    MAX(order_date)                                                   AS latest_order,
+    SUM(CASE WHEN order_date > GETDATE() THEN 1 ELSE 0 END)          AS future_dated_orders,
+    
+    -- Business Logic Checks
+    COUNT(DISTINCT promotion_id)                                      AS distinct_promos_used
+
+FROM [Retail_DataWarehouse].[bronze].[orders];
+
+PRINT '>> bronze.payments';
+SELECT
+    COUNT_BIG(*)                                                      AS total_rows,
+    COUNT_BIG(DISTINCT payment_id)                                    AS unique_payments,
+    COUNT_BIG(DISTINCT order_id)                                      AS unique_orders,
+    
+    -- Null Checks
+    SUM(CAST(CASE WHEN payment_id IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_payment_ids,
+    SUM(CAST(CASE WHEN order_id   IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_order_ids,
+    SUM(CAST(CASE WHEN amount     IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_amounts,
+    
+    -- Amount Validation
+    SUM(CAST(CASE WHEN amount     < 0     THEN 1 ELSE 0 END AS BIGINT)) AS negative_amount,
+    SUM(CAST(CASE WHEN amount     = 0     THEN 1 ELSE 0 END AS BIGINT)) AS zero_amount,
+    
+    -- Statistical Summary (Using BIGINT for the Sum)
+    MIN(amount)                                                       AS min_amount,
+    MAX(amount)                                                       AS max_amount,
+    AVG(CAST(amount AS FLOAT))                                        AS avg_amount,
+    SUM(CAST(amount AS BIGINT))                                       AS total_revenue
+
+FROM [Retail_DataWarehouse].[bronze].[payments];
+
+
+PRINT '>> bronze.products';
+SELECT
+    COUNT_BIG(*)                                                      AS total_rows,
+    COUNT_BIG(DISTINCT product_id)                                    AS unique_products,
+    COUNT_BIG(DISTINCT category_id)                                   AS unique_categories,
+    COUNT_BIG(DISTINCT supplier_id)                                   AS unique_suppliers,
+    
+    -- Null Checks
+    SUM(CAST(CASE WHEN product_id  IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_product_ids,
+    SUM(CAST(CASE WHEN category_id IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_category_ids,
+    SUM(CAST(CASE WHEN supplier_id IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_supplier_ids,
+    SUM(CAST(CASE WHEN price       IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_prices,
+    
+    -- Price Validation
+    SUM(CAST(CASE WHEN price < 0   THEN 1 ELSE 0 END AS BIGINT))      AS negative_price,
+    SUM(CAST(CASE WHEN price = 0   THEN 1 ELSE 0 END AS BIGINT))      AS zero_price,
+    
+    -- Statistical Summary
+    MIN(price)                                                       AS min_price,
+    MAX(price)                                                       AS max_price,
+    AVG(CAST(price AS FLOAT))                                        AS avg_price
+
+FROM [Retail_DataWarehouse].[bronze].[products];
+
+PRINT '>> bronze.promotions';
+SELECT
+    COUNT_BIG(*)                                                      AS total_rows,
+    COUNT_BIG(DISTINCT promotion_id)                                  AS unique_promotions,
+    
+    -- Null Checks
+    SUM(CAST(CASE WHEN promotion_id IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_promotion_ids,
+    SUM(CAST(CASE WHEN discount     IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_discounts,
+    
+    -- Discount Range Validation
+    SUM(CAST(CASE WHEN discount < 0 OR discount > 100 THEN 1 ELSE 0 END AS BIGINT)) AS invalid_discount_range,
+    
+    -- Statistical Summary
+    MIN(discount)                                                     AS min_discount,
+    MAX(discount)                                                     AS max_discount,
+    AVG(CAST(discount AS FLOAT))                                      AS avg_discount
+
+FROM [Retail_DataWarehouse].[bronze].[promotions];
+
+PRINT '>> bronze.returns';
+SELECT
+    COUNT_BIG(*)                                                      AS total_rows,
+    COUNT_BIG(DISTINCT return_id)                                     AS unique_returns,
+    COUNT_BIG(DISTINCT order_item_id)                                 AS unique_item_returns,
+    
+    -- Null Checks
+    SUM(CAST(CASE WHEN return_id     IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_return_ids,
+    SUM(CAST(CASE WHEN order_item_id IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_item_ids,
+    SUM(CAST(CASE WHEN refund        IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_refunds,
+    
+    -- Refund Validation
+    SUM(CAST(CASE WHEN refund < 0    THEN 1 ELSE 0 END AS BIGINT))      AS negative_refund,
+    SUM(CAST(CASE WHEN refund = 0    THEN 1 ELSE 0 END AS BIGINT))      AS zero_refund,
+    
+    -- Statistical Summary
+    MIN(refund)                                                       AS min_refund,
+    MAX(refund)                                                       AS max_refund,
+    AVG(CAST(refund AS FLOAT))                                        AS avg_refund,
+    SUM(CAST(refund AS BIGINT))                                       AS total_refunded_amount
+
+FROM [Retail_DataWarehouse].[bronze].[returns];
+
+PRINT '>> bronze.shipments';
+SELECT
+    COUNT_BIG(*)                                                      AS total_rows,
+    COUNT_BIG(DISTINCT shipment_id)                                   AS unique_shipments,
+    COUNT_BIG(DISTINCT order_id)                                      AS unique_orders,
+    
+    -- Null Checks
+    SUM(CAST(CASE WHEN shipment_id IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_shipment_ids,
+    SUM(CAST(CASE WHEN order_id    IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_order_ids,
+    SUM(CAST(CASE WHEN status      IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_status,
+    
+    -- Status Categorization
+    SUM(CAST(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END AS BIGINT)) AS status_delivered,
+    SUM(CAST(CASE WHEN status = 'shipped'   THEN 1 ELSE 0 END AS BIGINT)) AS status_shipped,
+    SUM(CAST(CASE WHEN status = 'late'      THEN 1 ELSE 0 END AS BIGINT)) AS status_late,
+    
+    -- Quality Check: Unrecognized Statuses
+    SUM(CAST(CASE WHEN status NOT IN ('delivered', 'shipped', 'late') 
+                  AND status IS NOT NULL THEN 1 ELSE 0 END AS BIGINT))   AS unrecognized_status
+
+FROM [Retail_DataWarehouse].[bronze].[shipments];
+
+PRINT '>> bronze.stores';
+SELECT
+    COUNT_BIG(*)                                                      AS total_rows,
+    COUNT_BIG(DISTINCT store_id)                                      AS unique_stores,
+    COUNT_BIG(DISTINCT city)                                          AS unique_cities,
+    
+    -- Null Checks
+    SUM(CAST(CASE WHEN store_id IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_store_ids,
+    SUM(CAST(CASE WHEN city     IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_cities,
+    
+    -- String Validation (Checking for empty strings or whitespace)
+    SUM(CAST(CASE WHEN LTRIM(RTRIM(city)) = '' THEN 1 ELSE 0 END AS BIGINT)) AS empty_city_names,
+
+    -- Business Logic: Minimum and Maximum Store IDs
+    MIN(store_id)                                                     AS min_store_id,
+    MAX(store_id)                                                     AS max_store_id
+
+FROM [Retail_DataWarehouse].[bronze].[stores];
+
+PRINT '>> bronze.suppliers';
+SELECT
+    COUNT(*)                                                      AS total_rows,
+    COUNT(DISTINCT supplier_id)                                   AS unique_suppliers,
+    COUNT(DISTINCT country)                                       AS unique_countries,
+    
+    -- Null Checks
+    SUM(CAST(CASE WHEN supplier_id IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_supplier_ids,
+    SUM(CAST(CASE WHEN country     IS NULL THEN 1 ELSE 0 END AS BIGINT)) AS null_countries,
+    
+    -- Data Quality: Blank Country Check
+    SUM(CAST(CASE WHEN LTRIM(RTRIM(country)) = '' THEN 1 ELSE 0 END AS BIGINT)) AS empty_country_names,
+
+    -- Range Check
+    MIN(supplier_id)                                                  AS min_supplier_id,
+    MAX(supplier_id)                                                  AS max_supplier_id
+
+FROM [Retail_DataWarehouse].[bronze].[suppliers];
